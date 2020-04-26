@@ -1,0 +1,121 @@
+apply plugin: 'com.android.application'
+
+def app_android = this.getRootProject().ext.app_android
+def app_dependencies = this.rootProject.ext.app_dependencies
+
+//可以直接使用
+def isRelease = rootProject.ext.isRelease
+
+File signFile = rootProject.file('component.properties')
+Properties properties = new Properties()
+if (signFile.exists()) {
+    properties.load(new FileInputStream(signFile))
+}
+
+
+android {
+    compileSdkVersion app_android.compileSdkVersion
+    buildToolsVersion app_android.buildToolsVersion
+
+    defaultConfig {
+        applicationId app_android.applicationId
+        minSdkVersion app_android.minSdkVersion
+        targetSdkVersion app_android.targetSdkVersion
+        versionCode app_android.versionCode
+        versionName app_android.versionName
+
+        testInstrumentationRunner app_android.testInstrumentationRunner
+
+        // 在gradle文件中配置选项参数值（用于APT传参接收）
+        // 切记：必须写在defaultConfig节点下
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments = [moduleName: project.getName(), packageNameForAPT: packageNameForAPT]
+            }
+        }
+
+        //解决多包依赖显示使用注解
+        javaCompileOptions {
+            annotationProcessorOptions {
+                includeCompileClasspath = true
+            }
+        }
+
+    }
+
+    //signingConfigs需要放在buildTypes签名之前不然找不到
+    signingConfigs {
+        release {
+            storeFile rootProject.file(properties['storeFile'])
+            storePassword properties['storePassword']
+            keyAlias properties['keyAlias']
+            keyPassword properties['keyPassword']
+        }
+
+        debug {
+            //需要在build.gradle同目录下的gradle.properties中配置以下信息
+            storeFile rootProject.file(properties['storeFile'])
+            storePassword properties['storePassword']
+            keyAlias properties['keyAlias']
+            keyPassword properties['keyPassword']
+        }
+
+
+        buildTypes {
+            debug {
+                // 日志开关
+                buildConfigField "boolean", "isOpenLog", String.valueOf(isOpenLog)
+                //移除无用的资源文件,必须开启混淆
+                shrinkResources false
+                // 优化压缩
+                zipAlignEnabled false
+                // 是否进行混淆
+                minifyEnabled false
+                // 混淆文件的位置
+                proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+                //配置在debug包中也签上名,好处是debug包换release包不会清数据
+                signingConfig signingConfigs.debug
+            }
+
+            release {
+                // 日志开关
+                buildConfigField "boolean", "isOpenLog", String.valueOf(isOpenLog)
+                //移除无用的资源文件,必须开启混淆
+                shrinkResources true
+                // 优化压缩
+                zipAlignEnabled true
+                // 是否进行混淆
+                minifyEnabled true
+                // 混淆文件的位置
+                proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
+                //签名文件配置
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // 循环引入第三方库
+    app_dependencies.each { k, v ->
+        // if (k != "aa" && v != "cc") {}
+        implementation v
+    }
+
+    implementation project(":common")
+    // arouter 专用 注解模块
+    implementation project(":arouter_annotation")
+    // arouter 专用 注解处理器
+    annotationProcessor project(':arouter_compiler')
+
+    // 如果是集成化模式，做发布版本时。各个模块都不能独立运行了
+    if (isRelease) {
+        // 订单模块
+        implementation project(":order")
+        // 个人中心模块
+        implementation project(":user")
+    }
+
+}
